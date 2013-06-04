@@ -23,16 +23,16 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.PrintStream;
 import java.net.URI;
-import java.net.URL;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
-import java.util.Calendar;
-import java.util.GregorianCalendar;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 
+import org.apache.commons.io.FileUtils;
 import org.apache.commons.lang.StringUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -41,7 +41,6 @@ import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.hive.conf.HiveConf;
 import org.apache.hadoop.hive.ql.MapRedStats;
-import org.apache.hadoop.hive.ql.exec.FunctionRegistry;
 import org.apache.hadoop.hive.ql.exec.Utilities;
 import org.apache.hadoop.hive.ql.history.HiveHistory;
 import org.apache.hadoop.hive.ql.metadata.HiveException;
@@ -59,6 +58,7 @@ import org.apache.hadoop.hive.ql.util.DosToUnix;
  * configuration information
  */
 public class SessionState {
+  private static final Log LOG = LogFactory.getLog(SessionState.class);
 
   /**
    * current configuration.
@@ -181,30 +181,20 @@ public class SessionState {
     this.isVerbose = isVerbose;
   }
 
-  public SessionState() {
-    this(null);
-  }
-
   public SessionState(HiveConf conf) {
     this.conf = conf;
     isSilent = conf.getBoolVar(HiveConf.ConfVars.HIVESESSIONSILENT);
     ls = new LineageState();
     overriddenConfigurations = new HashMap<String, String>();
     overriddenConfigurations.putAll(HiveConf.getConfSystemProperties());
-
-    // Register the Hive builtins jar and all of its functions
-    try {
-      Class<?> pluginClass = Utilities.getBuiltinUtilsClass();
-      URL jarLocation = pluginClass.getProtectionDomain().getCodeSource()
-        .getLocation();
-      add_builtin_resource(
-        ResourceType.JAR, jarLocation.toString());
-      FunctionRegistry.registerFunctionsFromPluginJar(
-        jarLocation, pluginClass.getClassLoader());
-    } catch (Exception ex) {
-      throw new RuntimeException("Failed to load Hive builtin functions", ex);
+    // if there isn't already a session name, go ahead and create it.
+    if (StringUtils.isEmpty(conf.getVar(HiveConf.ConfVars.HIVESESSIONID))) {
+      conf.setVar(HiveConf.ConfVars.HIVESESSIONID, makeSessionId());
     }
   }
+
+  private static final SimpleDateFormat DATE_FORMAT =
+    new SimpleDateFormat("yyyyMMddHHmm");
 
   public void setCmd(String cmdString) {
     conf.setVar(HiveConf.ConfVars.HIVEQUERYSTRING, cmdString);
@@ -257,12 +247,6 @@ public class SessionState {
 
     tss.set(startSs);
 
-    if (StringUtils.isEmpty(startSs.getConf().getVar(
-        HiveConf.ConfVars.HIVESESSIONID))) {
-      startSs.getConf()
-          .setVar(HiveConf.ConfVars.HIVESESSIONID, makeSessionId());
-    }
-
     if (startSs.hiveHist == null) {
       startSs.hiveHist = new HiveHistory(startSs);
     }
@@ -282,10 +266,11 @@ public class SessionState {
     }
 
     try {
-      startSs.authenticator = HiveUtils.getAuthenticator(startSs
-          .getConf());
-      startSs.authorizer = HiveUtils.getAuthorizeProviderManager(startSs
-          .getConf(), startSs.authenticator);
+      startSs.authenticator = HiveUtils.getAuthenticator(
+          startSs.getConf(),HiveConf.ConfVars.HIVE_AUTHENTICATOR_MANAGER);
+      startSs.authorizer = HiveUtils.getAuthorizeProviderManager(
+          startSs.getConf(), HiveConf.ConfVars.HIVE_AUTHORIZATION_MANAGER,
+          startSs.authenticator);
       startSs.createTableGrants = CreateTableAutomaticGrant.create(startSs
           .getConf());
     } catch (HiveException e) {
@@ -311,15 +296,13 @@ public class SessionState {
     return hiveHist;
   }
 
+  /**
+   * Create a session ID. Looks like:
+   *   $user_$pid@$host_$date
+   * @return the unique string
+   */
   private static String makeSessionId() {
-    GregorianCalendar gc = new GregorianCalendar();
-    String userid = System.getProperty("user.name");
-
-    return userid
-        + "_"
-        + String.format("%1$4d%2$02d%3$02d%4$02d%5$02d", gc.get(Calendar.YEAR),
-        gc.get(Calendar.MONTH) + 1, gc.get(Calendar.DAY_OF_MONTH), gc
-        .get(Calendar.HOUR_OF_DAY), gc.get(Calendar.MINUTE));
+    return UUID.randomUUID().toString();
   }
 
   /**
@@ -605,10 +588,10 @@ public class SessionState {
       File resourceDir = new File(getConf().getVar(HiveConf.ConfVars.DOWNLOADED_RESOURCES_DIR));
       String destinationName = new Path(value).getName();
       File destinationFile = new File(resourceDir, destinationName);
-      if ( resourceDir.exists() && ! resourceDir.isDirectory() ) {
+      if (resourceDir.exists() && ! resourceDir.isDirectory()) {
         throw new RuntimeException("The resource directory is not a directory, resourceDir is set to" + resourceDir);
       }
-      if ( ! resourceDir.exists() && ! resourceDir.mkdirs() ) {
+      if (!resourceDir.exists() && !resourceDir.mkdirs()) {
         throw new RuntimeException("Couldn't create directory " + resourceDir);
       }
       try {
@@ -619,7 +602,8 @@ public class SessionState {
           try {
             DosToUnix.convertWindowsScriptToUnix(destinationFile);
           } catch (Exception e) {
-            throw new RuntimeException("Caught exception while converting to unix line endings", e);
+            throw new RuntimeException("Caught exception while converting file " +
+                destinationFile + " to unix line endings", e);
           }
         }
       } catch (Exception e) {
@@ -748,5 +732,18 @@ public class SessionState {
 
   public void setLocalMapRedErrors(Map<String, List<String>> localMapRedErrors) {
     this.localMapRedErrors = localMapRedErrors;
+  }
+
+  public void close() throws IOException {
+    File resourceDir =
+      new File(getConf().getVar(HiveConf.ConfVars.DOWNLOADED_RESOURCES_DIR));
+    LOG.debug("Removing resource dir " + resourceDir);
+    try {
+      if (resourceDir.exists()) {
+        FileUtils.deleteDirectory(resourceDir);
+      }
+    } catch (IOException e) {
+      LOG.info("Error removing session resource dir " + resourceDir, e);
+    }
   }
 }

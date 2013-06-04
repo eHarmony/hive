@@ -161,6 +161,16 @@ public class BlockMergeTask extends Task<MergeWork> implements Serializable,
         HiveConf.ConfVars.HIVEMERGECURRENTJOBHASDYNAMICPARTITIONS,
         work.hasDynamicPartitions());
 
+    HiveConf.setBoolVar(job,
+        HiveConf.ConfVars.HIVEMERGECURRENTJOBCONCATENATELISTBUCKETING,
+        work.isListBucketingAlterTableConcatenate());
+
+    HiveConf.setIntVar(
+        job,
+        HiveConf.ConfVars.HIVEMERGECURRENTJOBCONCATENATELISTBUCKETINGDEPTH,
+        ((work.getListBucketingCtx() == null) ? 0 : work.getListBucketingCtx()
+            .calculateListBucketingLevel()));
+
     int returnVal = 0;
     RunningJob rj = null;
     boolean noName = StringUtils.isEmpty(HiveConf.getVar(job,
@@ -234,7 +244,8 @@ public class BlockMergeTask extends Task<MergeWork> implements Serializable,
           HadoopJobExecHelper.runningJobKillURIs.remove(rj.getJobID());
           jobID = rj.getID().toString();
         }
-        RCFileMergeMapper.jobClose(outputPath, success, job, console, work.getDynPartCtx());
+        RCFileMergeMapper.jobClose(outputPath, success, job, console,
+          work.getDynPartCtx(), null);
       } catch (Exception e) {
       }
     }
@@ -367,10 +378,4 @@ public class BlockMergeTask extends Task<MergeWork> implements Serializable,
   public void updateCounters(Counters ctrs, RunningJob rj) throws IOException {
     // no op
   }
-
-  @Override
-  protected void localizeMRTmpFilesImpl(Context ctx) {
-    // no op
-  }
-
 }

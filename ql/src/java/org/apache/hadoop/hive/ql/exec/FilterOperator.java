@@ -68,6 +68,10 @@ public class FilterOperator extends Operator<FilterDesc> implements
       heartbeatInterval = HiveConf.getIntVar(hconf,
           HiveConf.ConfVars.HIVESENDHEARTBEAT);
       conditionEvaluator = ExprNodeEvaluatorFactory.get(conf.getPredicate());
+      if (HiveConf.getBoolVar(hconf, HiveConf.ConfVars.HIVEEXPREVALUATIONCACHE)) {
+        conditionEvaluator = ExprNodeEvaluatorFactory.toCachedEval(conditionEvaluator);
+      }
+
       statsMap.put(Counter.FILTERED, filtered_count);
       statsMap.put(Counter.PASSED, passed_count);
       conditionInspector = null;
@@ -149,11 +153,35 @@ public class FilterOperator extends Operator<FilterDesc> implements
    */
   @Override
   public String getName() {
+    return getOperatorName();
+  }
+
+  static public String getOperatorName() {
     return "FIL";
   }
 
   @Override
   public OperatorType getType() {
     return OperatorType.FILTER;
+  }
+
+  @Override
+  public boolean supportSkewJoinOptimization() {
+    return true;
+  }
+
+  @Override
+  public boolean columnNamesRowResolvedCanBeObtained() {
+    return true;
+  }
+
+  @Override
+  public boolean supportAutomaticSortMergeJoin() {
+    return true;
+  }
+
+  @Override
+  public boolean supportUnionRemoveOptimization() {
+    return true;
   }
 }

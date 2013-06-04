@@ -18,23 +18,17 @@
 
 package org.apache.hadoop.hive.common;
 
-import java.io.BufferedOutputStream;
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileOutputStream;
 import java.io.IOException;
 import java.net.URI;
 import java.util.BitSet;
 import java.util.List;
 
-import org.apache.commons.compress.archivers.tar.TarArchiveEntry;
-import org.apache.commons.compress.archivers.tar.TarArchiveOutputStream;
-import org.apache.commons.compress.compressors.gzip.GzipCompressorOutputStream;
-import org.apache.commons.compress.utils.IOUtils;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.util.Shell;
+
 
 /**
  * Collection of file manipulation utilities common across Hive.
@@ -126,6 +120,47 @@ public final class FileUtils {
     return name.toString();
   }
 
+  /**
+   * default directory will have the same depth as number of skewed columns
+   * this will make future operation easy like DML merge, concatenate merge
+   * @param skewedCols
+   * @param name
+   * @return
+   */
+  public static String makeDefaultListBucketingDirName(List<String> skewedCols,
+      String name) {
+    String lbDirName;
+    String defaultDir = FileUtils.escapePathName(name);
+    StringBuilder defaultDirPath = new StringBuilder();
+    for (int i = 0; i < skewedCols.size(); i++) {
+      if (i > 0) {
+        defaultDirPath.append(Path.SEPARATOR);
+      }
+      defaultDirPath.append(defaultDir);
+    }
+    lbDirName = defaultDirPath.toString();
+    return lbDirName;
+  }
+
+  /**
+   * Makes a valid list bucketing directory name.
+   * @param lbCols The skewed keys' names
+   * @param vals The skewed values
+   * @return An escaped, valid list bucketing directory name.
+   */
+  public static String makeListBucketingDirName(List<String> lbCols, List<String> vals) {
+    StringBuilder name = new StringBuilder();
+    for (int i = 0; i < lbCols.size(); i++) {
+      if (i > 0) {
+        name.append(Path.SEPARATOR);
+      }
+      name.append(escapePathName((lbCols.get(i)).toLowerCase()));
+      name.append('=');
+      name.append(escapePathName(vals.get(i)));
+    }
+    return name.toString();
+  }
+
   // NOTE: This is for generating the internal path name for partitions. Users
   // should always use the MetaStore API to get the path name for a partition.
   // Users should not directly take partition values and turn it into a path
@@ -135,6 +170,12 @@ public final class FileUtils {
   // won't be corrupt, because the full path name in metastore is stored.
   // In that case, Hive will continue to read the old data, but when it creates
   // new partitions, it will use new names.
+  // edit : There are some use cases for which adding new chars does not seem
+  // to be backward compatible - Eg. if partition was created with name having
+  // a special char that you want to start escaping, and then you try dropping
+  // the partition with a hive version that now escapes the special char using
+  // the list below, then the drop partition fails to work.
+
   static BitSet charToEscape = new BitSet(128);
   static {
     for (char c = 0; c < ' '; c++) {
@@ -152,9 +193,19 @@ public final class FileUtils {
         '\u001A', '\u001B', '\u001C', '\u001D', '\u001E', '\u001F',
         '"', '#', '%', '\'', '*', '/', ':', '=', '?', '\\', '\u007F', '{',
         '[', ']', '^'};
+
     for (char c : clist) {
       charToEscape.set(c);
     }
+
+    if(Shell.WINDOWS){
+      //On windows, following chars need to be escaped as well
+      char [] winClist = {' ', '<','>','|'};
+      for (char c : winClist) {
+        charToEscape.set(c);
+      }
+    }
+
   }
 
   static boolean needsEscaping(char c) {
@@ -246,39 +297,4 @@ public final class FileUtils {
     }
   }
 
-  /**
-   * Archive all the files in the inputFiles into outputFile
-   *
-   * @param inputFiles
-   * @param outputFile
-   * @throws IOException
-   */
-  public static void tar(String parentDir, String[] inputFiles, String outputFile)
-      throws IOException {
-
-    FileOutputStream out = null;
-    try {
-      out = new FileOutputStream(new File(parentDir, outputFile));
-      TarArchiveOutputStream tOut = new TarArchiveOutputStream(
-          new GzipCompressorOutputStream(new BufferedOutputStream(out)));
-
-      for (int i = 0; i < inputFiles.length; i++) {
-        File f = new File(parentDir, inputFiles[i]);
-        TarArchiveEntry tarEntry = new TarArchiveEntry(f, f.getName());
-        tOut.setLongFileMode(TarArchiveOutputStream.LONGFILE_GNU);
-        tOut.putArchiveEntry(tarEntry);
-        FileInputStream input = new FileInputStream(f);
-        try {
-          IOUtils.copy(input, tOut); // copy with 8K buffer, not close
-        } finally {
-          input.close();
-        }
-        tOut.closeArchiveEntry();
-      }
-      tOut.close(); // finishes inside
-    } finally {
-      // TarArchiveOutputStream seemed not to close files properly in error situation
-      org.apache.hadoop.io.IOUtils.closeStream(out);
-    }
-  }
 }

@@ -18,8 +18,11 @@
 
 package org.apache.hadoop.hive.ql.exec;
 
-import java.io.Serializable;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.Map;
 
 import junit.framework.TestCase;
 
@@ -32,6 +35,7 @@ import org.apache.hadoop.hive.ql.plan.ExprNodeConstantDesc;
 import org.apache.hadoop.hive.ql.plan.ExprNodeDesc;
 import org.apache.hadoop.hive.ql.plan.FilterDesc;
 import org.apache.hadoop.hive.ql.plan.MapredWork;
+import org.apache.hadoop.hive.ql.plan.OperatorDesc;
 import org.apache.hadoop.hive.ql.plan.PartitionDesc;
 import org.apache.hadoop.hive.ql.plan.PlanUtils;
 import org.apache.hadoop.hive.ql.plan.ScriptDesc;
@@ -316,7 +320,7 @@ public class TestOperators extends TestCase {
       aliases.add("b");
       LinkedHashMap<String, ArrayList<String>> pathToAliases =
         new LinkedHashMap<String, ArrayList<String>>();
-      pathToAliases.put("/testDir", aliases);
+      pathToAliases.put("hdfs:///testDir", aliases);
 
       // initialize pathToTableInfo
       // Default: treat the table as a single column "col"
@@ -324,7 +328,7 @@ public class TestOperators extends TestCase {
       PartitionDesc pd = new PartitionDesc(td, null);
       LinkedHashMap<String, org.apache.hadoop.hive.ql.plan.PartitionDesc> pathToPartitionInfo =
         new LinkedHashMap<String, org.apache.hadoop.hive.ql.plan.PartitionDesc>();
-      pathToPartitionInfo.put("/testDir", pd);
+      pathToPartitionInfo.put("hdfs:///testDir", pd);
 
       // initialize aliasToWork
       CollectDesc cd = new CollectDesc(Integer.valueOf(1));
@@ -334,7 +338,8 @@ public class TestOperators extends TestCase {
       CollectOperator cdop2 = (CollectOperator) OperatorFactory
           .get(CollectDesc.class);
       cdop2.setConf(cd);
-      LinkedHashMap<String, Operator<? extends Serializable>> aliasToWork = new LinkedHashMap<String, Operator<? extends Serializable>>();
+      LinkedHashMap<String, Operator<? extends OperatorDesc>> aliasToWork =
+        new LinkedHashMap<String, Operator<? extends OperatorDesc>>();
       aliasToWork.put("a", cdop1);
       aliasToWork.put("b", cdop2);
 

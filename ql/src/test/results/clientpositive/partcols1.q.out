@@ -26,8 +26,9 @@ SELECT TRANSFORM(
  b.partitionId,b.col2,b.col3,b.col4
  )
 
- USING '/bin/cat' as (a,b,c,d)
+ USING 'cat' as (a,b,c,d)
 PREHOOK: type: QUERY
+PREHOOK: Input: default@test1
 PREHOOK: Input: default@test1@partitionid=1
 #### A masked pattern was here ####
 POSTHOOK: query: FROM (
@@ -42,8 +43,9 @@ SELECT TRANSFORM(
  b.partitionId,b.col2,b.col3,b.col4
  )
 
- USING '/bin/cat' as (a,b,c,d)
+ USING 'cat' as (a,b,c,d)
 POSTHOOK: type: QUERY
+POSTHOOK: Input: default@test1
 POSTHOOK: Input: default@test1@partitionid=1
 #### A masked pattern was here ####
 POSTHOOK: Lineage: test1 PARTITION(partitionid=1).col1 SIMPLE [(src)src.FieldSchema(name:key, type:string, comment:default), ]

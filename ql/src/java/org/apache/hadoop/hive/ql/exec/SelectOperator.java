@@ -19,9 +19,10 @@
 package org.apache.hadoop.hive.ql.exec;
 
 import java.io.Serializable;
-import java.util.ArrayList;
+import java.util.List;
 
 import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.hive.conf.HiveConf;
 import org.apache.hadoop.hive.ql.metadata.HiveException;
 import org.apache.hadoop.hive.ql.plan.ExprNodeDesc;
 import org.apache.hadoop.hive.ql.plan.SelectDesc;
@@ -47,11 +48,14 @@ public class SelectOperator extends Operator<SelectDesc> implements
       return;
     }
 
-    ArrayList<ExprNodeDesc> colList = conf.getColList();
+    List<ExprNodeDesc> colList = conf.getColList();
     eval = new ExprNodeEvaluator[colList.size()];
     for (int i = 0; i < colList.size(); i++) {
       assert (colList.get(i) != null);
       eval[i] = ExprNodeEvaluatorFactory.get(colList.get(i));
+      if (HiveConf.getBoolVar(hconf, HiveConf.ConfVars.HIVEEXPREVALUATIONCACHE)) {
+        eval[i] = ExprNodeEvaluatorFactory.toCachedEval(eval[i]);
+      }
     }
 
     output = new Object[eval.length];
@@ -89,11 +93,35 @@ public class SelectOperator extends Operator<SelectDesc> implements
    */
   @Override
   public String getName() {
+    return getOperatorName();
+  }
+
+  static public String getOperatorName() {
     return "SEL";
   }
 
   @Override
   public OperatorType getType() {
     return OperatorType.SELECT;
+  }
+
+  @Override
+  public boolean supportSkewJoinOptimization() {
+    return true;
+  }
+
+  @Override
+  public boolean columnNamesRowResolvedCanBeObtained() {
+    return true;
+  }
+
+  @Override
+  public boolean supportAutomaticSortMergeJoin() {
+    return true;
+  }
+
+  @Override
+  public boolean supportUnionRemoveOptimization() {
+    return true;
   }
 }

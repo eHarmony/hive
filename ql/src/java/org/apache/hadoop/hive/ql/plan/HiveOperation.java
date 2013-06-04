@@ -21,7 +21,6 @@ package org.apache.hadoop.hive.ql.plan;
 import org.apache.hadoop.hive.ql.security.authorization.Privilege;
 
 public enum HiveOperation {
-
   EXPLAIN("EXPLAIN", null, null),
   LOAD("LOAD", null, new Privilege[]{Privilege.ALTER_DATA}),
   EXPORT("EXPORT", new Privilege[]{Privilege.SELECT}, null),
@@ -48,11 +47,19 @@ public enum HiveOperation {
   ALTERPARTITION_SERIALIZER("ALTERPARTITION_SERIALIZER", new Privilege[]{Privilege.ALTER_METADATA}, null),
   ALTERTABLE_SERDEPROPERTIES("ALTERTABLE_SERDEPROPERTIES", new Privilege[]{Privilege.ALTER_METADATA}, null),
   ALTERPARTITION_SERDEPROPERTIES("ALTERPARTITION_SERDEPROPERTIES", new Privilege[]{Privilege.ALTER_METADATA}, null),
-  ALTERTABLE_CLUSTER_SORT("ALTERTABLE_CLUSTER_SORT", new Privilege[]{Privilege.ALTER_METADATA}, null),
+  ALTERTABLE_CLUSTER_SORT("ALTERTABLE_CLUSTER_SORT",
+      new Privilege[]{Privilege.ALTER_METADATA}, null),
+  ANALYZE_TABLE("ANALYZE_TABLE", null, null),
+  ALTERTABLE_BUCKETNUM("ALTERTABLE_BUCKETNUM",
+      new Privilege[]{Privilege.ALTER_METADATA}, null),
+  ALTERPARTITION_BUCKETNUM("ALTERPARTITION_BUCKETNUM",
+      new Privilege[]{Privilege.ALTER_METADATA}, null),
   SHOWDATABASES("SHOWDATABASES", new Privilege[]{Privilege.SHOW_DATABASE}, null),
   SHOWTABLES("SHOWTABLES", null, null),
+  SHOWCOLUMNS("SHOWCOLUMNS", null, null),
   SHOW_TABLESTATUS("SHOW_TABLESTATUS", null, null),
   SHOW_TBLPROPERTIES("SHOW_TBLPROPERTIES", null, null),
+  SHOW_CREATETABLE("SHOW_CREATETABLE", new Privilege[]{Privilege.SELECT}, null),
   SHOWFUNCTIONS("SHOWFUNCTIONS", null, null),
   SHOWINDEXES("SHOWINDEXES", null, null),
   SHOWPARTITIONS("SHOWPARTITIONS", null, null),
@@ -65,6 +72,7 @@ public enum HiveOperation {
   DROPINDEX("DROPINDEX", null, null),
   ALTERINDEX_REBUILD("ALTERINDEX_REBUILD", null, null),
   ALTERVIEW_PROPERTIES("ALTERVIEW_PROPERTIES", null, null),
+  DROPVIEW_PROPERTIES("DROPVIEW_PROPERTIES", null, null),
   LOCKTABLE("LOCKTABLE",  new Privilege[]{Privilege.LOCK}, null),
   UNLOCKTABLE("UNLOCKTABLE",  new Privilege[]{Privilege.LOCK}, null),
   CREATEROLE("CREATEROLE", null, null),
@@ -82,6 +90,7 @@ public enum HiveOperation {
   ALTERTABLE_LOCATION("ALTERTABLE_LOCATION", new Privilege[]{Privilege.ALTER_DATA}, null),
   ALTERPARTITION_LOCATION("ALTERPARTITION_LOCATION", new Privilege[]{Privilege.ALTER_DATA}, null),
   CREATETABLE("CREATETABLE", null, new Privilege[]{Privilege.CREATE}),
+  TRUNCATETABLE("TRUNCATETABLE", null, new Privilege[]{Privilege.DROP}),
   CREATETABLE_AS_SELECT("CREATETABLE_AS_SELECT", new Privilege[]{Privilege.SELECT}, new Privilege[]{Privilege.CREATE}),
   QUERY("QUERY", new Privilege[]{Privilege.SELECT}, new Privilege[]{Privilege.ALTER_DATA, Privilege.CREATE}),
   ALTERINDEX_PROPS("ALTERINDEX_PROPS",null, null),
@@ -89,6 +98,10 @@ public enum HiveOperation {
   DESCDATABASE("DESCDATABASE", null, null),
   ALTERTABLE_MERGEFILES("ALTER_TABLE_MERGE", new Privilege[] { Privilege.SELECT }, new Privilege[] { Privilege.ALTER_DATA }),
   ALTERPARTITION_MERGEFILES("ALTER_PARTITION_MERGE", new Privilege[] { Privilege.SELECT }, new Privilege[] { Privilege.ALTER_DATA }),
+  ALTERTABLE_SKEWED("ALTERTABLE_SKEWED", new Privilege[] {Privilege.ALTER_METADATA}, null),
+  ALTERTBLPART_SKEWED_LOCATION("ALTERTBLPART_SKEWED_LOCATION",
+      new Privilege[] {Privilege.ALTER_DATA}, null),
+  ALTERVIEW_RENAME("ALTERVIEW_RENAME", new Privilege[] {Privilege.ALTER_METADATA}, null),
   ;
 
   private String operationName;

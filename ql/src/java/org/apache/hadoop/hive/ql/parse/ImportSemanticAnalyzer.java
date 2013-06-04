@@ -56,7 +56,7 @@ import org.apache.hadoop.hive.ql.plan.CreateTableDesc;
 import org.apache.hadoop.hive.ql.plan.DDLWork;
 import org.apache.hadoop.hive.ql.plan.LoadTableDesc;
 import org.apache.hadoop.hive.ql.plan.MoveWork;
-import org.apache.hadoop.hive.serde.Constants;
+import org.apache.hadoop.hive.serde.serdeConstants;
 
 /**
  * ImportSemanticAnalyzer.
@@ -112,8 +112,12 @@ public class ImportSemanticAnalyzer extends BaseSemanticAnalyzer {
             table.getSd().getSerdeInfo().getSerializationLib(),
             null, // storagehandler passed as table params
             table.getSd().getSerdeInfo().getParameters(),
-            table.getParameters(), false);
-
+            table.getParameters(), false,
+            (null == table.getSd().getSkewedInfo()) ? null : table.getSd().getSkewedInfo()
+                .getSkewedColNames(),
+            (null == table.getSd().getSkewedInfo()) ? null : table.getSd().getSkewedInfo()
+                .getSkewedColValues());
+        tblDesc.setStoredAsSubDirectories(table.getSd().isStoredAsSubDirectories());
 
         List<FieldSchema> partCols = tblDesc.getPartCols();
         List<String> partColNames = new ArrayList<String>(partCols.size());
@@ -453,9 +457,9 @@ public class ImportSemanticAnalyzer extends BaseSemanticAnalyzer {
                 .getMsg(" Table Serde class does not match"));
       }
       String existingSerdeFormat = table
-          .getSerdeParam(Constants.SERIALIZATION_FORMAT);
+          .getSerdeParam(serdeConstants.SERIALIZATION_FORMAT);
       String importedSerdeFormat = tableDesc.getSerdeProps().get(
-          Constants.SERIALIZATION_FORMAT);
+          serdeConstants.SERIALIZATION_FORMAT);
       if (!ObjectUtils.equals(existingSerdeFormat, importedSerdeFormat)) {
         throw new SemanticException(
             ErrorMsg.INCOMPATIBLE_SCHEMA
@@ -535,5 +539,4 @@ public class ImportSemanticAnalyzer extends BaseSemanticAnalyzer {
     }
     return null;
   }
-
 }

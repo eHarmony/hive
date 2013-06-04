@@ -25,7 +25,6 @@ import java.io.OutputStream;
 import java.io.Serializable;
 import java.lang.management.ManagementFactory;
 import java.lang.management.MemoryMXBean;
-import java.net.URL;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -46,14 +45,17 @@ import org.apache.hadoop.filecache.DistributedCache;
 import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
-import org.apache.hadoop.hive.common.FileUtils;
+import org.apache.hadoop.hive.common.CompressionUtils;
 import org.apache.hadoop.hive.common.LogUtils;
+import org.apache.hadoop.hive.common.LogUtils.LogInitializationException;
 import org.apache.hadoop.hive.conf.HiveConf;
 import org.apache.hadoop.hive.conf.HiveConf.ConfVars;
 import org.apache.hadoop.hive.ql.Context;
 import org.apache.hadoop.hive.ql.DriverContext;
+import org.apache.hadoop.hive.ql.ErrorMsg;
 import org.apache.hadoop.hive.ql.QueryPlan;
 import org.apache.hadoop.hive.ql.exec.FileSinkOperator.RecordWriter;
+import org.apache.hadoop.hive.ql.io.BucketizedHiveInputFormat;
 import org.apache.hadoop.hive.ql.io.HiveKey;
 import org.apache.hadoop.hive.ql.io.HiveOutputFormat;
 import org.apache.hadoop.hive.ql.io.HiveOutputFormatImpl;
@@ -64,6 +66,7 @@ import org.apache.hadoop.hive.ql.plan.FetchWork;
 import org.apache.hadoop.hive.ql.plan.FileSinkDesc;
 import org.apache.hadoop.hive.ql.plan.MapredLocalWork;
 import org.apache.hadoop.hive.ql.plan.MapredWork;
+import org.apache.hadoop.hive.ql.plan.OperatorDesc;
 import org.apache.hadoop.hive.ql.plan.PartitionDesc;
 import org.apache.hadoop.hive.ql.plan.TableDesc;
 import org.apache.hadoop.hive.ql.plan.api.StageType;
@@ -85,7 +88,6 @@ import org.apache.log4j.Appender;
 import org.apache.log4j.BasicConfigurator;
 import org.apache.log4j.FileAppender;
 import org.apache.log4j.LogManager;
-import org.apache.log4j.PropertyConfigurator;
 import org.apache.log4j.varia.NullAppender;
 
 /**
@@ -102,6 +104,8 @@ public class ExecDriver extends Task<MapredWork> implements Serializable, Hadoop
   protected HadoopJobExecHelper jobExecHelper;
 
   protected static transient final Log LOG = LogFactory.getLog(ExecDriver.class);
+
+  private RunningJob rj;
 
   /**
    * Constructor when invoked from QL.
@@ -176,7 +180,7 @@ public class ExecDriver extends Task<MapredWork> implements Serializable, Hadoop
    * @return true if fatal errors happened during job execution, false otherwise.
    */
   public boolean checkFatalErrors(Counters ctrs, StringBuilder errMsg) {
-    for (Operator<? extends Serializable> op : work.getAliasToWork().values()) {
+    for (Operator<? extends OperatorDesc> op : work.getAliasToWork().values()) {
       if (op.checkFatalErrors(ctrs, errMsg)) {
         return true;
       }
@@ -193,7 +197,8 @@ public class ExecDriver extends Task<MapredWork> implements Serializable, Hadoop
     // fix up outputs
     Map<String, ArrayList<String>> pa = work.getPathToAliases();
     if (pa != null) {
-      ArrayList<Operator<? extends Serializable>> opList = new ArrayList<Operator<? extends Serializable>>();
+      List<Operator<? extends OperatorDesc>> opList =
+        new ArrayList<Operator<? extends OperatorDesc>>();
 
       if (work.getReducer() != null) {
         opList.add(work.getReducer());
@@ -204,7 +209,7 @@ public class ExecDriver extends Task<MapredWork> implements Serializable, Hadoop
           opList.add(work.getAliasToWork().get(a));
 
           while (!opList.isEmpty()) {
-            Operator<? extends Serializable> op = opList.remove(0);
+            Operator<? extends OperatorDesc> op = opList.remove(0);
 
             if (op instanceof FileSinkOperator) {
               FileSinkDesc fdesc = ((FileSinkOperator) op).getConf();
@@ -317,6 +322,10 @@ public class ExecDriver extends Task<MapredWork> implements Serializable, Hadoop
       inpFormat = ShimLoader.getHadoopShims().getInputFormatClassName();
     }
 
+    if (getWork().isUseBucketizedHiveInputFormat()) {
+      inpFormat = BucketizedHiveInputFormat.class.getName();
+    }
+
     LOG.info("Using " + inpFormat);
 
     try {
@@ -349,7 +358,6 @@ public class ExecDriver extends Task<MapredWork> implements Serializable, Hadoop
       initializeFiles("tmpfiles", addedFiles);
     }
     int returnVal = 0;
-    RunningJob rj = null;
     boolean noName = StringUtils.isEmpty(HiveConf.getVar(job, HiveConf.ConfVars.HADOOPJOBNAME));
 
     if (noName) {
@@ -365,8 +373,7 @@ public class ExecDriver extends Task<MapredWork> implements Serializable, Hadoop
     try{
       MapredLocalWork localwork = work.getMapLocalWork();
       if (localwork != null) {
-        boolean localMode = HiveConf.getVar(job, HiveConf.ConfVars.HADOOPJT).equals("local");
-        if (!localMode) {
+        if (!ShimLoader.getHadoopShims().isLocalMode(job)) {
           Path localPath = new Path(localwork.getTmpFileURI());
           Path hdfsPath = new Path(work.getTmpHDFSFileURI());
 
@@ -387,7 +394,7 @@ public class ExecDriver extends Task<MapredWork> implements Serializable, Hadoop
           String archiveFileName = Utilities.generateTarFileName(stageId);
           localwork.setStageID(stageId);
 
-          FileUtils.tar(parentDir, fileNames,archiveFileName);
+          CompressionUtils.tar(parentDir, fileNames,archiveFileName);
           Path archivePath = new Path(archiveFileURI);
           LOG.info("Archive "+ hashtableFiles.length+" hash table files to " + archiveFileURI);
 
@@ -405,7 +412,7 @@ public class ExecDriver extends Task<MapredWork> implements Serializable, Hadoop
           LOG.info("Add 1 archive file to distributed cache. Archive file: " + hdfsFilePath.toUri());
         }
       }
-
+      work.configureJobConf(job);
       addInputPaths(job, work, emptyScratchDirStr, ctx);
 
       Utilities.setMapRedWork(job, work, ctx.getMRTmpFileURI());
@@ -425,7 +432,12 @@ public class ExecDriver extends Task<MapredWork> implements Serializable, Hadoop
         String statsImplementationClass = HiveConf.getVar(job, HiveConf.ConfVars.HIVESTATSDBCLASS);
         if (StatsFactory.setImplementation(statsImplementationClass, job)) {
           statsPublisher = StatsFactory.getStatsPublisher();
-          statsPublisher.init(job); // creating stats table if not exists
+          if (!statsPublisher.init(job)) { // creating stats table if not exists
+            if (HiveConf.getBoolVar(job, HiveConf.ConfVars.HIVE_STATS_RELIABLE)) {
+              throw
+                new HiveException(ErrorMsg.STATSPUBLISHER_INITIALIZATION_ERROR.getErrorCodedMsg());
+            }
+          }
         }
       }
 
@@ -478,7 +490,7 @@ public class ExecDriver extends Task<MapredWork> implements Serializable, Hadoop
       if (rj != null) {
         JobCloseFeedBack feedBack = new JobCloseFeedBack();
         if (work.getAliasToWork() != null) {
-          for (Operator<? extends Serializable> op : work.getAliasToWork().values()) {
+          for (Operator<? extends OperatorDesc> op : work.getAliasToWork().values()) {
             op.jobClose(job, success, feedBack);
           }
         }
@@ -551,18 +563,10 @@ public class ExecDriver extends Task<MapredWork> implements Serializable, Hadoop
    */
 
   private static void setupChildLog4j(Configuration conf) {
-    URL hive_l4j = ExecDriver.class.getClassLoader().getResource(LogUtils.HIVE_EXEC_L4J);
-    if (hive_l4j == null) {
-      hive_l4j = ExecDriver.class.getClassLoader().getResource(LogUtils.HIVE_L4J);
-    }
-
-    if (hive_l4j != null) {
-      // setting queryid so that log4j configuration can use it to generate
-      // per query log file
-      System.setProperty(HiveConf.ConfVars.HIVEQUERYID.toString(), HiveConf.getVar(conf,
-          HiveConf.ConfVars.HIVEQUERYID));
-      LogManager.resetConfiguration();
-      PropertyConfigurator.configure(hive_l4j);
+    try {
+      LogUtils.initHiveExecLog4j();
+    } catch (LogInitializationException e) {
+      System.err.println(e.getMessage());
     }
   }
 
@@ -693,7 +697,7 @@ public class ExecDriver extends Task<MapredWork> implements Serializable, Hadoop
     OutputStream out = null;
 
     Properties deltaP = hconf.getChangedProperties();
-    boolean hadoopLocalMode = hconf.getVar(HiveConf.ConfVars.HADOOPJT).equals("local");
+    boolean hadoopLocalMode = ShimLoader.getHadoopShims().isLocalMode(hconf);
     String hadoopSysDir = "mapred.system.dir";
     String hadoopWorkDir = "mapred.local.dir";
 
@@ -732,7 +736,7 @@ public class ExecDriver extends Task<MapredWork> implements Serializable, Hadoop
   }
 
   @Override
-  public Collection<Operator<? extends Serializable>> getTopOperators() {
+  public Collection<Operator<? extends OperatorDesc>> getTopOperators() {
     return getWork().getAliasToWork().values();
   }
 
@@ -911,58 +915,8 @@ public class ExecDriver extends Task<MapredWork> implements Serializable, Hadoop
   }
 
   @Override
-  protected void localizeMRTmpFilesImpl(Context ctx) {
-
-    // localize any map-reduce input paths
-    ctx.localizeKeys((Map<String, Object>) ((Object) work.getPathToAliases()));
-    ctx.localizeKeys((Map<String, Object>) ((Object) work.getPathToPartitionInfo()));
-
-    // localize any input paths for maplocal work
-    MapredLocalWork l = work.getMapLocalWork();
-    if (l != null) {
-      Map<String, FetchWork> m = l.getAliasToFetchWork();
-      if (m != null) {
-        for (FetchWork fw : m.values()) {
-          String s = fw.getTblDir();
-          if ((s != null) && ctx.isMRTmpFileURI(s)) {
-            fw.setTblDir(ctx.localizeMRTmpFileURI(s));
-          }
-        }
-      }
-    }
-
-    // fix up outputs
-    Map<String, ArrayList<String>> pa = work.getPathToAliases();
-    if (pa != null) {
-      for (List<String> ls : pa.values()) {
-        for (String a : ls) {
-          ArrayList<Operator<? extends Serializable>> opList = new ArrayList<Operator<? extends Serializable>>();
-          opList.add(work.getAliasToWork().get(a));
-
-          while (!opList.isEmpty()) {
-            Operator<? extends Serializable> op = opList.remove(0);
-
-            if (op instanceof FileSinkOperator) {
-              FileSinkDesc fdesc = ((FileSinkOperator) op).getConf();
-              String s = fdesc.getDirName();
-              if ((s != null) && ctx.isMRTmpFileURI(s)) {
-                fdesc.setDirName(ctx.localizeMRTmpFileURI(s));
-              }
-              ((FileSinkOperator) op).setConf(fdesc);
-            }
-
-            if (op.getChildOperators() != null) {
-              opList.addAll(op.getChildOperators());
-            }
-          }
-        }
-      }
-    }
-  }
-
-  @Override
   public void updateCounters(Counters ctrs, RunningJob rj) throws IOException {
-    for (Operator<? extends Serializable> op : work.getAliasToWork().values()) {
+    for (Operator<? extends OperatorDesc> op : work.getAliasToWork().values()) {
       op.updateCounters(ctrs);
     }
     if (work.getReducer() != null) {
@@ -973,5 +927,18 @@ public class ExecDriver extends Task<MapredWork> implements Serializable, Hadoop
   @Override
   public void logPlanProgress(SessionState ss) throws IOException {
     ss.getHiveHistory().logPlanProgress(queryPlan);
+  }
+
+  @Override
+  public void shutdown() {
+    super.shutdown();
+    if (rj != null) {
+      try {
+        rj.killJob();
+      } catch (Exception e) {
+        LOG.warn("failed to kill job " + rj.getID(), e);
+      }
+      rj = null;
+    }
   }
 }

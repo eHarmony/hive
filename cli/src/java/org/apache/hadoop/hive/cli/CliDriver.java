@@ -32,12 +32,12 @@ import java.util.Map;
 import java.util.Set;
 
 import jline.ArgumentCompletor;
+import jline.ArgumentCompletor.AbstractArgumentDelimiter;
+import jline.ArgumentCompletor.ArgumentDelimiter;
 import jline.Completor;
 import jline.ConsoleReader;
 import jline.History;
 import jline.SimpleCompletor;
-import jline.ArgumentCompletor.AbstractArgumentDelimiter;
-import jline.ArgumentCompletor.ArgumentDelimiter;
 
 import org.apache.commons.lang.StringUtils;
 import org.apache.commons.logging.Log;
@@ -55,10 +55,11 @@ import org.apache.hadoop.hive.ql.exec.FunctionRegistry;
 import org.apache.hadoop.hive.ql.exec.HadoopJobExecHelper;
 import org.apache.hadoop.hive.ql.exec.Utilities;
 import org.apache.hadoop.hive.ql.exec.Utilities.StreamPrinter;
-import org.apache.hadoop.hive.ql.parse.ParseDriver;
+import org.apache.hadoop.hive.ql.parse.HiveParser;
 import org.apache.hadoop.hive.ql.parse.VariableSubstitution;
 import org.apache.hadoop.hive.ql.processors.CommandProcessor;
 import org.apache.hadoop.hive.ql.processors.CommandProcessorFactory;
+import org.apache.hadoop.hive.ql.processors.CommandProcessorResponse;
 import org.apache.hadoop.hive.ql.session.SessionState;
 import org.apache.hadoop.hive.ql.session.SessionState.LogHelper;
 import org.apache.hadoop.hive.service.HiveClient;
@@ -77,8 +78,8 @@ import sun.misc.SignalHandler;
  */
 public class CliDriver {
 
-  public static String prompt = "hive";
-  public static String prompt2 = "    "; // when ';' is not yet seen
+  public static String prompt = null;
+  public static String prompt2 = null; // when ';' is not yet seen
   public static final int LINES_TO_FETCH = 40; // number of lines to fetch in batch from remote hive server
 
   public static final String HIVERCFILE = ".hiverc";
@@ -265,11 +266,13 @@ public class CliDriver {
 
             printHeader(qp, out);
 
+            int counter = 0;
             try {
               while (qp.getResults(res)) {
                 for (String r : res) {
                   out.println(r);
                 }
+                counter += res.size();
                 res.clear();
                 if (out.checkError()) {
                   break;
@@ -288,10 +291,9 @@ public class CliDriver {
             }
 
             long end = System.currentTimeMillis();
-            if (end > start) {
-              double timeTaken = (end - start) / 1000.0;
-              console.printInfo("Time taken: " + timeTaken + " seconds", null);
-            }
+            double timeTaken = (end - start) / 1000.0;
+            console.printInfo("Time taken: " + timeTaken + " seconds" +
+                (counter == 0 ? "" : ", Fetched: " + counter + " row(s)"));
 
           } else {
             String firstToken = tokenizeCmd(cmd.trim())[0];
@@ -300,7 +302,12 @@ public class CliDriver {
             if (ss.getIsVerbose()) {
               ss.out.println(firstToken + " " + cmd_1);
             }
-            ret = proc.run(cmd_1).getResponseCode();
+            CommandProcessorResponse res = proc.run(cmd_1);
+            if (res.getResponseCode() != 0) {
+              ss.out.println("Query returned non-zero code: " + res.getResponseCode() +
+                  ", cause: " + res.getErrorMessage());
+            }
+            ret = res.getResponseCode();
           }
         }
       } catch (CommandNeedRetryException e) {
@@ -529,7 +536,7 @@ public class CliDriver {
     }
 
     // We add Hive keywords, including lower-cased versions
-    for (String s : ParseDriver.getKeywords()) {
+    for (String s : HiveParser.getKeywords()) {
       sc.addCandidateString(s);
       sc.addCandidateString(s.toLowerCase());
     }
@@ -655,7 +662,36 @@ public class CliDriver {
       ss.getOverriddenConfigurations().put((String) item.getKey(), (String) item.getValue());
     }
 
+    // read prompt configuration and substitute variables.
+    prompt = conf.getVar(HiveConf.ConfVars.CLIPROMPT);
+    prompt = new VariableSubstitution().substitute(conf, prompt);
+    prompt2 = spacesForString(prompt);
+
     SessionState.start(ss);
+
+    // execute cli driver work
+    int ret = 0;
+    try {
+      ret = executeDriver(ss, conf, oproc);
+    } catch (Exception e) {
+      ss.close();
+      throw e;
+    }
+
+    ss.close();
+    return ret;
+  }
+
+  /**
+   * Execute the cli work
+   * @param ss CliSessionState of the CLI driver
+   * @param conf HiveConf for the driver sionssion
+   * @param oproc Opetion processor of the CLI invocation
+   * @return status of the CLI comman execution
+   * @throws Exception
+   */
+  private static int executeDriver(CliSessionState ss, HiveConf conf, OptionsProcessor oproc)
+      throws Exception {
 
     // connect to Hive Server
     if (ss.getHost() != null) {
@@ -692,12 +728,14 @@ public class CliDriver {
     cli.processInitFiles(ss);
 
     if (ss.execString != null) {
-      return cli.processLine(ss.execString);
+      int cmdProcessStatus = cli.processLine(ss.execString);
+      return cmdProcessStatus;
     }
 
     try {
       if (ss.fileName != null) {
-        return cli.processFile(ss.fileName);
+        int fileProcessStatus = cli.processFile(ss.fileName);
+        return fileProcessStatus;
       }
     } catch (FileNotFoundException e) {
       System.err.println("Could not open input file for reading. (" + e.getMessage() + ")");
@@ -752,9 +790,6 @@ public class CliDriver {
         continue;
       }
     }
-
-    ss.close();
-
     return ret;
   }
 

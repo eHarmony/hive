@@ -19,6 +19,8 @@
 package org.apache.hadoop.hive.ql.exec;
 
 import java.io.IOException;
+import java.lang.Exception;
+import java.net.MalformedURLException;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -118,9 +120,6 @@ public class JobDebugger implements Runnable {
       console.printError(e.getMessage());
     }
   }
-  private String getTaskAttemptLogUrl(String taskTrackerHttpAddress, String taskAttemptId) {
-    return taskTrackerHttpAddress + "/tasklog?taskid=" + taskAttemptId + "&start=-8193";
-  }
 
   public static int extractErrorCode(String[] diagnostics) {
     int result = 0;
@@ -141,12 +140,12 @@ public class JobDebugger implements Runnable {
     public void run() {
       try {
         getTaskInfos();
-      } catch (IOException e) {
+      } catch (Exception e) {
         console.printError(e.getMessage());
       }
     }
 
-    private void getTaskInfos() throws IOException {
+    private void getTaskInfos() throws IOException, MalformedURLException {
       int startIndex = 0;
       while (true) {
         TaskCompletionEvent[] taskCompletions = rj.getTaskCompletionEvents(startIndex);
@@ -184,16 +183,20 @@ public class JobDebugger implements Runnable {
           }
           // These tasks should have come from the same job.
           assert (ti.getJobId() != null &&  ti.getJobId().equals(jobId));
-          ti.getLogUrls().add(getTaskAttemptLogUrl(t.getTaskTrackerHttp(), t.getTaskId()));
+          String taskAttemptLogUrl = ShimLoader.getHadoopShims().getTaskAttemptLogUrl(
+            conf, t.getTaskTrackerHttp(), t.getTaskId());
+          if (taskAttemptLogUrl != null) {
+            ti.getLogUrls().add(taskAttemptLogUrl);
+          }
 
           // If a task failed, fetch its error code (if available).
           // Also keep track of the total number of failures for that
           // task (typically, a task gets re-run up to 4 times if it fails.
           if (t.getTaskStatus() != TaskCompletionEvent.Status.SUCCEEDED) {
+            String[] diags = rj.getTaskDiagnostics(t.getTaskAttemptId());
+            ti.setDiagnosticMesgs(diags);
             if (ti.getErrorCode() == 0) {
-              String[] diags = rj.getTaskDiagnostics(t.getTaskAttemptId());
               ti.setErrorCode(extractErrorCode(diags));
-              ti.setDiagnosticMesgs(diags);
             }
 
             Integer failAttempts = failures.get(taskId);
@@ -226,6 +229,10 @@ public class JobDebugger implements Runnable {
   @SuppressWarnings("deprecation")
   private void showJobFailDebugInfo() throws IOException {
     console.printError("Error during job, obtaining debugging information...");
+    if (!conf.get("mapred.job.tracker", "local").equals("local")) {
+      // Show Tracking URL for remotely running jobs.
+      console.printError("Job Tracking URL: " + rj.getTrackingURL());
+    }
     // Loop to get all task completion events because getTaskCompletionEvents
     // only returns a subset per call
     TaskInfoGrabber tlg = new TaskInfoGrabber();
@@ -262,8 +269,8 @@ public class JobDebugger implements Runnable {
       if (failures.get(task).intValue() == maxFailures) {
         TaskInfo ti = taskIdToInfo.get(task);
         String jobId = ti.getJobId();
-        String taskUrl = (jtUrl == null) ? "Unavailable" :
-            jtUrl + "/taskdetails.jsp?jobid=" + jobId + "&tipid=" + task.toString();
+        String taskUrl = (jtUrl == null) ? null :
+          jtUrl + "/taskdetails.jsp?jobid=" + jobId + "&tipid=" + task.toString();
 
         TaskLogProcessor tlp = new TaskLogProcessor(conf);
         for (String logUrl : ti.getLogUrls()) {
@@ -290,7 +297,9 @@ public class JobDebugger implements Runnable {
           sb.append("Task with the most failures(" + maxFailures + "): \n");
           sb.append("-----\n");
           sb.append("Task ID:\n  " + task + "\n\n");
-          sb.append("URL:\n  " + taskUrl + "\n");
+          if (taskUrl != null) {
+            sb.append("URL:\n  " + taskUrl + "\n");
+          }
 
           for (ErrorAndSolution e : errors) {
             sb.append("\n");

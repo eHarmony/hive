@@ -18,6 +18,7 @@
 
 package org.apache.hadoop.hive.ql;
 
+import java.text.MessageFormat;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.regex.Matcher;
@@ -29,7 +30,8 @@ import org.apache.hadoop.hive.ql.parse.ASTNode;
 import org.apache.hadoop.hive.ql.parse.ASTNodeOrigin;
 
 /**
- * List of error messages thrown by the parser.
+ * List of all error messages.
+ * This list contains both compile time and run-time errors.
  **/
 
 public enum ErrorMsg {
@@ -111,7 +113,7 @@ public enum ErrorMsg {
   NO_VALID_PARTN(10056, "The query does not reference any valid partition. "
       + "To run this query, set hive.mapred.mode=nonstrict"),
   NO_OUTER_MAPJOIN(10057, "MAPJOIN cannot be performed with OUTER JOIN"),
-  INVALID_MAPJOIN_HINT(10058, "Neither table specified as map-table"),
+  INVALID_MAPJOIN_HINT(10058, "All tables are specified as map-table for join"),
   INVALID_MAPJOIN_TABLE(10059, "Result of a union cannot be a map table"),
   NON_BUCKETED_TABLE(10060, "Sampling expression needed for non-bucketed table"),
   BUCKETED_NUMERATOR_BIGGER_DENOMINATOR(10061, "Numerator should not be bigger than "
@@ -165,9 +167,6 @@ public enum ErrorMsg {
       + "hive.exec.dynamic.partition=true or specify partition column values"),
   DYNAMIC_PARTITION_STRICT_MODE(10096, "Dynamic partition strict mode requires at least one "
       + "static partition column. To turn this off set hive.exec.dynamic.partition.mode=nonstrict"),
-  DYNAMIC_PARTITION_MERGE(10097, "Dynamic partition does not support merging using "
-      + "non-CombineHiveInputFormat. Please check your hive.input.format setting and "
-      + "make sure your Hadoop version support CombineFileInputFormat"),
   NONEXISTPARTCOL(10098, "Non-Partition column appears in the partition specification: "),
   UNSUPPORTED_TYPE(10099, "DATE and DATETIME types aren't supported yet. Please use "
       + "TIMESTAMP instead"),
@@ -215,6 +214,141 @@ public enum ErrorMsg {
   UDAF_INVALID_LOCATION(10128, "Not yet supported place for UDAF"),
   DROP_PARTITION_NON_STRING_PARTCOLS_NONEQUALITY(10129,
     "Drop partitions for a non string partition columns is not allowed using non-equality"),
+  ALTER_COMMAND_FOR_VIEWS(10131, "To alter a view you need to use the ALTER VIEW command."),
+  ALTER_COMMAND_FOR_TABLES(10132, "To alter a base table you need to use the ALTER TABLE command."),
+  ALTER_VIEW_DISALLOWED_OP(10133, "Cannot use this form of ALTER on a view"),
+  ALTER_TABLE_NON_NATIVE(10134, "ALTER TABLE cannot be used for a non-native table"),
+  SORTMERGE_MAPJOIN_FAILED(10135,
+      "Sort merge bucketed join could not be performed. " +
+      "If you really want to perform the operation, either set " +
+      "hive.optimize.bucketmapjoin.sortedmerge=false, or set " +
+      "hive.enforce.sortmergebucketmapjoin=false."),
+  BUCKET_MAPJOIN_NOT_POSSIBLE(10136,
+    "Bucketed mapjoin cannot be performed. " +
+    "This can be due to multiple reasons: " +
+    " . Join columns dont match bucketed columns. " +
+    " . Number of buckets are not a multiple of each other. " +
+    "If you really want to perform the operation, either remove the " +
+    "mapjoin hint from your query or set hive.enforce.bucketmapjoin to false."),
+
+  BUCKETED_TABLE_METADATA_INCORRECT(10141,
+   "Bucketed table metadata is not correct. " +
+    "Fix the metadata or don't use bucketed mapjoin, by setting " +
+    "hive.enforce.bucketmapjoin to false."),
+
+  JOINNODE_OUTERJOIN_MORETHAN_16(10142, "Single join node containing outer join(s) " +
+      "cannot have more than 16 aliases"),
+
+  INVALID_JDO_FILTER_EXPRESSION(10043, "Invalid expression for JDO filter"),
+
+  SHOW_CREATETABLE_INDEX(10144, "SHOW CREATE TABLE does not support tables of type INDEX_TABLE."),
+  ALTER_BUCKETNUM_NONBUCKETIZED_TBL(10145, "Table is not bucketized."),
+
+  TRUNCATE_FOR_NON_MANAGED_TABLE(10146, "Cannot truncate non-managed table {0}.", true),
+  TRUNCATE_FOR_NON_NATIVE_TABLE(10147, "Cannot truncate non-native table {0}.", true),
+  PARTSPEC_FOR_NON_PARTITIONED_TABLE(10148, "Partition spec for non partitioned table {0}.", true),
+
+  LOAD_INTO_STORED_AS_DIR(10195, "A stored-as-directories table cannot be used as target for LOAD"),
+  ALTER_TBL_STOREDASDIR_NOT_SKEWED(10196, "This operation is only valid on skewed table."),
+  ALTER_TBL_SKEWED_LOC_NO_LOC(10197, "Alter table skewed location doesn't have locations."),
+  ALTER_TBL_SKEWED_LOC_NO_MAP(10198, "Alter table skewed location doesn't have location map."),
+  SUPPORT_DIR_MUST_TRUE_FOR_LIST_BUCKETING(
+      10199,
+      "hive.mapred.supports.subdirectories must be true"
+          + " if any one of following is true: "
+          + " hive.optimize.listbucketing , mapred.input.dir.recursive"
+          + " and hive.optimize.union.remove."),
+  SKEWED_TABLE_NO_COLUMN_NAME(10200, "No skewed column name."),
+  SKEWED_TABLE_NO_COLUMN_VALUE(10201, "No skewed values."),
+  SKEWED_TABLE_DUPLICATE_COLUMN_NAMES(10202,
+      "Duplicate skewed column name:"),
+  SKEWED_TABLE_INVALID_COLUMN(10203,
+      "Invalid skewed column name:"),
+  SKEWED_TABLE_SKEWED_COL_NAME_VALUE_MISMATCH_1(10204,
+      "Skewed column name is empty but skewed value is not."),
+  SKEWED_TABLE_SKEWED_COL_NAME_VALUE_MISMATCH_2(10205,
+      "Skewed column value is empty but skewed name is not."),
+  SKEWED_TABLE_SKEWED_COL_NAME_VALUE_MISMATCH_3(10206,
+      "The number of skewed column names and the number of " +
+      "skewed column values are different: "),
+  ALTER_TABLE_NOT_ALLOWED_RENAME_SKEWED_COLUMN(10207,
+      " is a skewed column. It's not allowed to rename skewed column"
+          + " or change skewed column type."),
+  HIVE_GROUPING_SETS_AGGR_NOMAPAGGR(10209,
+    "Grouping sets aggregations (with rollups or cubes) are not allowed if map-side " +
+    " aggregation is turned off. Set hive.map.aggr=true if you want to use grouping sets"),
+  HIVE_GROUPING_SETS_AGGR_EXPRESSION_INVALID(10210,
+    "Grouping sets aggregations (with rollups or cubes) are not allowed if aggregation function " +
+    "parameters overlap with the aggregation functions columns"),
+
+  HIVE_GROUPING_SETS_AGGR_NOFUNC(10211,
+    "Grouping sets aggregations are not allowed if no aggregation function is presented"),
+
+  HIVE_UNION_REMOVE_OPTIMIZATION_NEEDS_SUBDIRECTORIES(10212,
+    "In order to use hive.optimize.union.remove, the hadoop version that you are using " +
+    "should support sub-directories for tables/partitions. If that is true, set " +
+    "hive.hadoop.supports.subdirectories to true. Otherwise, set hive.optimize.union.remove " +
+    "to false"),
+
+  HIVE_GROUPING_SETS_EXPR_NOT_IN_GROUPBY(10213,
+    "Grouping sets expression is not in GROUP BY key"),
+  INVALID_PARTITION_SPEC(10214, "Invalid partition spec specified"),
+  ALTER_TBL_UNSET_NON_EXIST_PROPERTY(10215,
+    "Please use the following syntax if not sure " +
+    "whether the property existed or not:\n" +
+    "ALTER TABLE tableName UNSET TBLPROPERTIES IF EXISTS (key1, key2, ...)\n"),
+  ALTER_VIEW_AS_SELECT_NOT_EXIST(10216,
+    "Cannot ALTER VIEW AS SELECT if view currently does not exist\n"),
+  REPLACE_VIEW_WITH_PARTITION(10217,
+    "Cannot replace a view with CREATE VIEW or REPLACE VIEW or " +
+    "ALTER VIEW AS SELECT if the view has partitions\n"),
+  EXISTING_TABLE_IS_NOT_VIEW(10218,
+    "Existing table is not a view\n"),
+  NO_SUPPORTED_ORDERBY_ALLCOLREF_POS(10219,
+    "Position in ORDER BY is not supported when using SELECT *"),
+  INVALID_POSITION_ALIAS_IN_GROUPBY(10220,
+    "Invalid position alias in Group By\n"),
+  INVALID_POSITION_ALIAS_IN_ORDERBY(10221,
+    "Invalid position alias in Order By\n"),
+
+  HIVE_GROUPING_SETS_THRESHOLD_NOT_ALLOWED_WITH_SKEW(10225,
+    "An additional MR job is introduced since the number of rows created per input row " +
+    "due to grouping sets is more than hive.new.job.grouping.set.cardinality. There is no need " +
+    "to handle skew separately. set hive.groupby.skewindata to false."),
+  HIVE_GROUPING_SETS_THRESHOLD_NOT_ALLOWED_WITH_DISTINCTS(10226,
+    "An additional MR job is introduced since the cardinality of grouping sets " +
+    "is more than hive.new.job.grouping.set.cardinality. This functionality is not supported " +
+    "with distincts. Either set hive.new.job.grouping.set.cardinality to a high number " +
+    "(higher than the number of rows per input row due to grouping sets in the query), or " +
+    "rewrite the query to not use distincts."),
+  TRUNCATE_COLUMN_INDEXED_TABLE(10227, "Can not truncate columns from table with indexes"),
+  TRUNCATE_COLUMN_NOT_RC(10228, "Only RCFileFormat supports column truncation."),
+  TRUNCATE_COLUMN_ARCHIVED(10229, "Column truncation cannot be performed on archived partitions."),
+  TRUNCATE_BUCKETED_COLUMN(10230,
+      "A column on which a partition/table is bucketed cannot be truncated."),
+  TRUNCATE_LIST_BUCKETED_COLUMN(10231,
+      "A column on which a partition/table is list bucketed cannot be truncated."),
+
+  OPERATOR_NOT_ALLOWED_WITH_MAPJOIN(10227,
+    "Not all clauses are supported with mapjoin hint. Please remove mapjoin hint."),
+
+  ANALYZE_TABLE_NOSCAN_NON_NATIVE(10228, "ANALYZE TABLE NOSCAN cannot be used for "
+      + "a non-native table"),
+
+  ANALYZE_TABLE_PARTIALSCAN_NON_NATIVE(10229, "ANALYZE TABLE PARTIALSCAN cannot be used for "
+      + "a non-native table"),
+  ANALYZE_TABLE_PARTIALSCAN_NON_RCFILE(10230, "ANALYZE TABLE PARTIALSCAN doesn't "
+      + "support non-RCfile. "),
+  ANALYZE_TABLE_PARTIALSCAN_EXTERNAL_TABLE(10231, "ANALYZE TABLE PARTIALSCAN "
+      + "doesn't support external table: "),
+  ANALYZE_TABLE_PARTIALSCAN_AGGKEY(10232, "Analyze partialscan command "
+            + "fails to construct aggregation for the partition "),
+  ANALYZE_TABLE_PARTIALSCAN_AUTOGATHER(10233, "Analyze partialscan is not allowed " +
+            "if hive.stats.autogather is set to false"),
+  PARTITION_VALUE_NOT_CONTINUOUS(10234, "Parition values specifed are not continuous." +
+            " A subpartition value is specified without specififying the parent partition's value"),
+  TABLES_INCOMPATIBLE_SCHEMAS(10235, "Tables have incompatible schemas and their partitions " +
+            " cannot be exchanged."),
 
   SCRIPT_INIT_ERROR(20000, "Unable to initialize custom script."),
   SCRIPT_IO_ERROR(20001, "An error occurred while reading or writing to your custom script. "
@@ -222,27 +356,66 @@ public enum ErrorMsg {
   SCRIPT_GENERIC_ERROR(20002, "Hive encountered some unknown error while "
       + "running your custom script."),
   SCRIPT_CLOSING_ERROR(20003, "An error occurred when trying to close the Operator " +
-      "running your custom script.")
+      "running your custom script."),
+
+  STATSPUBLISHER_NOT_OBTAINED(30000, "StatsPublisher cannot be obtained. " +
+    "There was a error to retrieve the StatsPublisher, and retrying " +
+    "might help. If you dont want the query to fail because accurate statistics " +
+    "could not be collected, set hive.stats.reliable=false"),
+  STATSPUBLISHER_INITIALIZATION_ERROR(30001, "StatsPublisher cannot be initialized. " +
+    "There was a error in the initialization of StatsPublisher, and retrying " +
+    "might help. If you dont want the query to fail because accurate statistics " +
+    "could not be collected, set hive.stats.reliable=false"),
+  STATSPUBLISHER_CONNECTION_ERROR(30002, "StatsPublisher cannot be connected to." +
+    "There was a error while connecting to the StatsPublisher, and retrying " +
+    "might help. If you dont want the query to fail because accurate statistics " +
+    "could not be collected, set hive.stats.reliable=false"),
+  STATSPUBLISHER_PUBLISHING_ERROR(30003, "Error in publishing stats. There was an " +
+    "error in publishing stats via StatsPublisher, and retrying " +
+    "might help. If you dont want the query to fail because accurate statistics " +
+    "could not be collected, set hive.stats.reliable=false"),
+  STATSPUBLISHER_CLOSING_ERROR(30004, "StatsPublisher cannot be closed." +
+    "There was a error while closing the StatsPublisher, and retrying " +
+    "might help. If you dont want the query to fail because accurate statistics " +
+    "could not be collected, set hive.stats.reliable=false"),
+
+  COLUMNSTATSCOLLECTOR_INVALID_PART_KEY(30005, "Invalid partitioning key specified in ANALYZE " +
+    "statement"),
+  COLUMNSTATSCOLLECTOR_INCORRECT_NUM_PART_KEY(30006, "Incorrect number of partitioning key " +
+    "specified in ANALYZE statement"),
+  COLUMNSTATSCOLLECTOR_INVALID_PARTITION(30007, "Invalid partitioning key/value specified in " +
+    "ANALYZE statement"),
+  COLUMNSTATSCOLLECTOR_INVALID_SYNTAX(30008, "Dynamic partitioning is not supported yet while " +
+    "gathering column statistics through ANALYZE statement"),
+  COLUMNSTATSCOLLECTOR_PARSE_ERROR(30009, "Encountered parse error while parsing rewritten query"),
+  COLUMNSTATSCOLLECTOR_IO_ERROR(30010, "Encountered I/O exception while parsing rewritten query"),
+  DROP_COMMAND_NOT_ALLOWED_FOR_PARTITION(30011, "Partition protected from being dropped"),
     ;
 
   private int errorCode;
   private String mesg;
   private String sqlState;
+  private MessageFormat format;
 
   private static final char SPACE = ' ';
   private static final Pattern ERROR_MESSAGE_PATTERN = Pattern.compile(".*Line [0-9]+:[0-9]+ (.*)");
   private static final Pattern ERROR_CODE_PATTERN =
     Pattern.compile("HiveException:\\s+\\[Error ([0-9]+)\\]: (.*)");
   private static Map<String, ErrorMsg> mesgToErrorMsgMap = new HashMap<String, ErrorMsg>();
+  private static Map<Pattern, ErrorMsg> formatToErrorMsgMap = new HashMap<Pattern, ErrorMsg>();
   private static int minMesgLength = -1;
 
   static {
     for (ErrorMsg errorMsg : values()) {
-      mesgToErrorMsgMap.put(errorMsg.getMsg().trim(), errorMsg);
-
-      int length = errorMsg.getMsg().trim().length();
-      if (minMesgLength == -1 || length < minMesgLength) {
-        minMesgLength = length;
+      if (errorMsg.format != null) {
+        String pattern = errorMsg.mesg.replaceAll("\\{.*\\}", ".*");
+        formatToErrorMsgMap.put(Pattern.compile("^" + pattern + "$"), errorMsg);
+      } else {
+        mesgToErrorMsgMap.put(errorMsg.getMsg().trim(), errorMsg);
+        int length = errorMsg.getMsg().trim().length();
+        if (minMesgLength == -1 || length < minMesgLength) {
+          minMesgLength = length;
+        }
       }
     }
   }
@@ -261,6 +434,12 @@ public enum ErrorMsg {
     ErrorMsg errorMsg = mesgToErrorMsgMap.get(mesg);
     if (errorMsg != null) {
       return errorMsg;
+    }
+
+    for (Map.Entry<Pattern, ErrorMsg> entry : formatToErrorMsgMap.entrySet()) {
+      if (entry.getKey().matcher(mesg).matches()) {
+        return entry.getValue();
+      }
     }
 
     // if not see if the mesg follows type of format, which is typically the
@@ -324,14 +503,23 @@ public enum ErrorMsg {
   }
 
   private ErrorMsg(int errorCode, String mesg) {
+    this(errorCode, mesg, "42000", false);
+  }
+
+  private ErrorMsg(int errorCode, String mesg, boolean format) {
     // 42000 is the generic SQLState for syntax error.
-    this(errorCode, mesg, "42000");
+    this(errorCode, mesg, "42000", format);
   }
 
   private ErrorMsg(int errorCode, String mesg, String sqlState) {
+    this(errorCode, mesg, sqlState, false);
+  }
+
+  private ErrorMsg(int errorCode, String mesg, String sqlState, boolean format) {
     this.errorCode = errorCode;
     this.mesg = mesg;
     this.sqlState = sqlState;
+    this.format = format ? new MessageFormat(mesg) : null;
   }
 
   private static int getLine(ASTNode tree) {
@@ -411,6 +599,15 @@ public enum ErrorMsg {
 
   public String getMsg(String reason) {
     return mesg + " " + reason;
+  }
+
+  public String format(String reason) {
+    return format(new String[]{reason});
+  }
+
+  public String format(String... reasons) {
+    assert format != null;
+    return format.format(reasons);
   }
 
   public String getErrorCodedMsg() {
